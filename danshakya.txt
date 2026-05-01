@@ -1,0 +1,2 @@
+Database Role
+  - Create CRUD functions for tasks and notes
