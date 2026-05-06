@@ -3,6 +3,23 @@
 
 ---
 
+## Development workflow (Week 2)
+
+- Work on `feature/...` branches (no direct pushes to `main`)
+- Open a Pull Request to merge into `main`
+- Add the Trello card link + short test steps in the PR
+- CI (GitHub Actions) should be green before merging
+- Post merged PR links in Discord so everyone can pull latest `main`
+
+## Quick start (backend)
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+uvicorn app.main:app --reload
+```
+
 ## Person 1 — AI Logic Lead / Product Owner
 **Mateus**
 
