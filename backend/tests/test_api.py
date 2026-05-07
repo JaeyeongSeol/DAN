@@ -91,3 +91,5 @@ def test_file_upload_creates_note() -> None:
     assert body["characters"] > 0
     assert body["note"]["title"] == "Uploaded context"
     assert "upload card" in body["note"]["content"]
+
+# CI rerun
