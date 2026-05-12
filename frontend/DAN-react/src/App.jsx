@@ -457,6 +457,7 @@ export default function App() {
               <Bot size={19} />
             </div>
           </div>
+          <div className="prototype-badge">Week 2 Prototype</div>
         </div>
 
         <nav>
@@ -508,6 +509,7 @@ export default function App() {
       <main className="workspace">
         <header className="topbar">
           <div>
+            <p className="mono-label">Week 2 prototype demo</p>
             <h1>{titleForView(view)}</h1>
           </div>
           <div className="topbar-actions">
@@ -524,7 +526,7 @@ export default function App() {
             <div className="today-hero">
               <p className="mono-label">Local workspace</p>
               <h2>Capture notes. Find next steps.</h2>
-              <p className="hero-copy">Add context, summarize fast, and approve the tasks that matter.</p>
+              <p className="hero-copy">Demo build for Week 2: add context, summarize fast, and approve the tasks that matter.</p>
               <div className="hero-actions">
                 <button className="primary" onClick={createFreshNote}>
                   <Plus size={17} />
