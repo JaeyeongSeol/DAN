@@ -8,8 +8,67 @@ from typing import Any
 import httpx
 
 OLLAMA_HOST = os.getenv("DAN_OLLAMA_HOST", "http://127.0.0.1:11434")
-PRIMARY_MODEL = os.getenv("DAN_OLLAMA_MODEL", "gemma3:4b")
+PRIMARY_MODEL = os.getenv("DAN_OLLAMA_MODEL", "gemma4:e2b")
 FALLBACK_MODEL = os.getenv("DAN_OLLAMA_FALLBACK_MODEL", "gemma3:1b")
+
+AI_ACTIONS: dict[str, dict[str, str]] = {
+    "summarize": {
+        "id": "summarize",
+        "label": "Summarize",
+        "description": "Create a concise overview with the most important points.",
+        "suggestion_type": "summary",
+        "result_title": "AI summary",
+    },
+    "bullet_points": {
+        "id": "bullet_points",
+        "label": "Bullet points",
+        "description": "Convert messy notes into clean bullets.",
+        "suggestion_type": "bullet_points",
+        "result_title": "Bullet point version",
+    },
+    "steps": {
+        "id": "steps",
+        "label": "Steps",
+        "description": "Turn the note into an ordered process.",
+        "suggestion_type": "steps",
+        "result_title": "Step-by-step version",
+    },
+    "explain_deeper": {
+        "id": "explain_deeper",
+        "label": "Explain deeper",
+        "description": "Add context so the note is easier to understand.",
+        "suggestion_type": "explanation",
+        "result_title": "Deeper explanation",
+    },
+    "topics": {
+        "id": "topics",
+        "label": "Topics",
+        "description": "Separate the note into topics and subtopics.",
+        "suggestion_type": "topics",
+        "result_title": "Topic breakdown",
+    },
+    "study_notes": {
+        "id": "study_notes",
+        "label": "Study notes",
+        "description": "Make review material from the note.",
+        "suggestion_type": "study_notes",
+        "result_title": "Study notes",
+    },
+    "extract_actions": {
+        "id": "extract_actions",
+        "label": "Extract tasks",
+        "description": "Find possible tasks for the review queue.",
+        "suggestion_type": "task",
+        "result_title": "Task suggestions",
+    },
+    "rewrite": {
+        "id": "rewrite",
+        "label": "Clean note",
+        "description": "Rewrite rough notes into a clearer version.",
+        "suggestion_type": "rewrite",
+        "result_title": "Cleaned note",
+    },
+}
 
 
 def clean_text(text: str) -> str:
@@ -19,6 +78,18 @@ def clean_text(text: str) -> str:
 def split_sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.!?])\s+", clean_text(text))
     return [part.strip() for part in parts if part.strip()]
+
+
+def list_ai_actions() -> list[dict[str, str]]:
+    return [
+        {
+            "id": action["id"],
+            "label": action["label"],
+            "description": action["description"],
+            "suggestion_type": action["suggestion_type"],
+        }
+        for action in AI_ACTIONS.values()
+    ]
 
 
 def ollama_available() -> bool:
@@ -85,6 +156,113 @@ Note:
     bullet_text = "\n".join(f"- {item}" for item in bullets)
     summary = f"{overview}\n\n{bullet_text}" if bullet_text else overview
     return {"mode": "mock", "summary": summary}
+
+
+def run_ai_action(action_id: str, text: str) -> dict[str, Any]:
+    action = AI_ACTIONS.get(action_id)
+    if action is None:
+        raise KeyError(action_id)
+
+    if action_id == "summarize":
+        result = summarize_note(text)
+        return {
+            "action_id": action_id,
+            "mode": result["mode"],
+            "suggestion_type": action["suggestion_type"],
+            "title": action["result_title"],
+            "content": result["summary"],
+            "raw_payload": result,
+        }
+
+    if action_id == "extract_actions":
+        result = extract_action_items(text)
+        return {
+            "action_id": action_id,
+            "mode": result["mode"],
+            "suggestion_type": action["suggestion_type"],
+            "title": action["result_title"],
+            "items": result["items"],
+            "raw_payload": result,
+        }
+
+    if action_id == "rewrite":
+        result = rewrite_note(text)
+        return {
+            "action_id": action_id,
+            "mode": result["mode"],
+            "suggestion_type": action["suggestion_type"],
+            "title": action["result_title"],
+            "content": result["rewritten"],
+            "raw_payload": result,
+        }
+
+    prompt = build_action_prompt(action_id, text)
+    ai_text = call_ollama(
+        [
+            {"role": "system", "content": "You are DAN, a local assistant that transforms notes into useful study and work material."},
+            {"role": "user", "content": prompt},
+        ]
+    )
+    mode = "ollama" if ai_text else "mock"
+    content = ai_text or build_mock_action_output(action_id, text)
+    return {
+        "action_id": action_id,
+        "mode": mode,
+        "suggestion_type": action["suggestion_type"],
+        "title": action["result_title"],
+        "content": content,
+        "raw_payload": {
+            "mode": mode,
+            "action_id": action_id,
+            "content": content,
+        },
+    }
+
+
+def build_action_prompt(action_id: str, text: str) -> str:
+    instructions = {
+        "bullet_points": "Turn this note into clean, grouped bullet points. Keep the original meaning and remove repetition.",
+        "steps": "Turn this note into ordered steps. Each step should start with an action verb when possible.",
+        "explain_deeper": "Explain this note in more detail for a student who is learning it. Add context, but do not invent facts.",
+        "topics": "Separate this note into topics and subtopics. Use short headings and bullets.",
+        "study_notes": "Turn this note into study notes with key ideas, important terms, and review questions.",
+    }
+    instruction = instructions.get(action_id, "Improve this note while preserving the meaning.")
+    return f"""
+{instruction}
+
+Note:
+{text}
+""".strip()
+
+
+def build_mock_action_output(action_id: str, text: str) -> str:
+    sentences = split_sentences(text)
+    if not sentences:
+        return "No note content was provided."
+
+    if action_id == "bullet_points":
+        return "\n".join(f"- {sentence}" for sentence in sentences[:8])
+
+    if action_id == "steps":
+        return "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(sentences[:8], start=1))
+
+    if action_id == "explain_deeper":
+        bullets = "\n".join(f"- {sentence}" for sentence in sentences[1:5])
+        return f"This note is mainly about: {sentences[0]}\n\nUseful context:\n{bullets or '- Review the note and identify the missing details.'}"
+
+    if action_id == "topics":
+        topic_lines = []
+        for index, sentence in enumerate(sentences[:6], start=1):
+            heading = clean_text(sentence).split(",")[0][:60].strip(" .:-")
+            topic_lines.append(f"Topic {index}: {heading}\n- {sentence}")
+        return "\n\n".join(topic_lines)
+
+    if action_id == "study_notes":
+        key_ideas = "\n".join(f"- {sentence}" for sentence in sentences[:5])
+        return f"Key ideas:\n{key_ideas}\n\nReview questions:\n- What is the main goal of this note?\n- What details need follow-up?\n- What should be done next?"
+
+    return "\n".join(f"- {sentence}" for sentence in sentences[:8])
 
 
 def _parse_json_array(text: str) -> list[dict[str, Any]] | None:

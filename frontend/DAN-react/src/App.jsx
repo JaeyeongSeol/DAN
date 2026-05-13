@@ -100,6 +100,9 @@ export default function App() {
   const [notes, setNotes] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
+  const [availableActions, setAvailableActions] = useState([]);
+  const [selectedActionIds, setSelectedActionIds] = useState([]);
+  const [actionProgress, setActionProgress] = useState({});
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [draft, setDraft] = useState(starterNote);
   const [status, setStatus] = useState('Ready');
@@ -123,6 +126,7 @@ export default function App() {
   const openTasks = tasks.filter((task) => task.status !== 'done');
   const approvedTasks = tasks.filter((task) => task.source_ai_suggestion_id);
   const pendingSuggestions = suggestions.filter((item) => item.type === 'task' && item.status === 'draft');
+  const generatedOutputs = suggestions.filter((item) => item.type !== 'task');
   const latestNotes = notes.slice(0, 5);
 
   async function refresh() {
@@ -140,8 +144,18 @@ export default function App() {
     });
   }
 
+  async function loadAiActions() {
+    const actions = await api('/api/ai/actions');
+    setAvailableActions(actions);
+    setSelectedActionIds((current) => {
+      const validIds = new Set(actions.map((action) => action.id));
+      return current.filter((id) => validIds.has(id));
+    });
+  }
+
   useEffect(() => {
     refresh().catch((error) => setStatus(`Backend offline: ${error.message}`));
+    loadAiActions().catch((error) => setStatus(`AI actions unavailable: ${error.message}`));
   }, []);
 
   useEffect(() => {
@@ -318,6 +332,56 @@ export default function App() {
     });
   }
 
+  function toggleAiAction(actionId) {
+    setSelectedActionIds((current) => (
+      current.includes(actionId)
+        ? current.filter((id) => id !== actionId)
+        : [...current, actionId]
+    ));
+  }
+
+  async function runSelectedAiActions() {
+    if (!selectedActionIds.length) {
+      setStatus('Choose at least one AI action');
+      return;
+    }
+    const noteId = await ensureSavedNote();
+    if (!noteId) return;
+
+    setBusy(true);
+    setActionProgress(Object.fromEntries(selectedActionIds.map((id) => [id, 'queued'])));
+    try {
+      let latestSummary = '';
+      for (const actionId of selectedActionIds) {
+        const action = availableActions.find((item) => item.id === actionId);
+        setStatus(`Running ${action?.label || 'AI action'}`);
+        setActionProgress((current) => ({ ...current, [actionId]: 'running' }));
+        const result = await api('/api/ai/actions/run', {
+          method: 'POST',
+          body: JSON.stringify({ note_id: noteId, action_id: actionId }),
+        });
+        if (result.suggestion_type === 'summary' && result.content) {
+          latestSummary = result.content;
+        }
+        setActionProgress((current) => ({ ...current, [actionId]: 'complete' }));
+      }
+      if (latestSummary) setSummary(latestSummary);
+      await refresh();
+      setStatus('AI actions complete');
+      setView('review');
+    } catch (error) {
+      setStatus(error.message);
+      setActionProgress((current) => {
+        const next = { ...current };
+        const runningId = Object.keys(next).find((id) => next[id] === 'running');
+        if (runningId) next[runningId] = 'error';
+        return next;
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approveSuggestion(item) {
     await runAction('Approving task', async () => {
       await api(`/api/ai/suggestions/${item.id}/approve`, {
@@ -457,7 +521,6 @@ export default function App() {
               <Bot size={19} />
             </div>
           </div>
-          <div className="prototype-badge">Week 2 Prototype</div>
         </div>
 
         <nav>
@@ -509,7 +572,6 @@ export default function App() {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <p className="mono-label">Week 2 prototype demo</p>
             <h1>{titleForView(view)}</h1>
           </div>
           <div className="topbar-actions">
@@ -526,7 +588,7 @@ export default function App() {
             <div className="today-hero">
               <p className="mono-label">Local workspace</p>
               <h2>Capture notes. Find next steps.</h2>
-              <p className="hero-copy">Demo build for Week 2: add context, summarize fast, and approve the tasks that matter.</p>
+              <p className="hero-copy">Add context, summarize fast, and approve the tasks that matter.</p>
               <div className="hero-actions">
                 <button className="primary" onClick={createFreshNote}>
                   <Plus size={17} />
@@ -612,23 +674,52 @@ export default function App() {
             </div>
 
             <div className="editor-surface">
-              <div className="editor-actions" data-tour="ai-actions">
-                <button className="secondary" onClick={summarizeActiveNote} disabled={busy}>
-                  <Sparkles size={17} />
-                  Summarize
-                </button>
-                <button className="secondary" onClick={extractActiveActions} disabled={busy}>
-                  <ClipboardList size={17} />
-                  Extract tasks
-                </button>
-                <button className="secondary" onClick={rewriteActiveNote} disabled={busy}>
-                  <Bot size={17} />
-                  Clean note
-                </button>
-                <button className="icon danger" onClick={deleteActiveNote} title="Delete note" disabled={!activeNote}>
-                  <Trash2 size={18} />
-                </button>
+              <div className="ai-action-panel" data-tour="ai-actions">
+                <div className="ai-action-heading">
+                  <div>
+                    <h2>AI actions</h2>
+                  </div>
+                  <button
+                    className="primary"
+                    onClick={runSelectedAiActions}
+                    disabled={busy || !availableActions.length || !selectedActionIds.length}
+                  >
+                    <Sparkles size={17} />
+                    Run selected
+                  </button>
+                </div>
+                <div className="ai-action-grid">
+                  {availableActions.length ? (
+                    availableActions.map((action) => {
+                      const selected = selectedActionIds.includes(action.id);
+                      const progress = actionProgress[action.id];
+                      return (
+                        <button
+                          key={action.id}
+                          type="button"
+                          className={[
+                            'ai-action-card',
+                            selected ? 'selected' : '',
+                            progress ? `is-${progress}` : '',
+                          ].filter(Boolean).join(' ')}
+                          onClick={() => toggleAiAction(action.id)}
+                          disabled={busy}
+                          title={action.description}
+                        >
+                          <span className="action-check">{selected && <Check size={13} />}</span>
+                          <span>
+                            <strong>{shortAiActionLabel(action)}</strong>
+                          </span>
+                          {progress && <em>{progress}</em>}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="ai-action-empty">AI actions load from the backend when DAN is online.</div>
+                  )}
+                </div>
               </div>
+
               <input
                 className="title-input"
                 value={draft.title}
@@ -643,10 +734,15 @@ export default function App() {
               />
               <div className="editor-footer">
                 <p>Tip: save first, then run AI so suggestions attach to this note.</p>
-                <button className="primary" onClick={saveNote} disabled={busy}>
-                  <Check size={18} />
-                  Save note
-                </button>
+                <div className="editor-footer-actions">
+                  <button className="icon danger" onClick={deleteActiveNote} title="Delete note" disabled={!activeNote}>
+                    <Trash2 size={18} />
+                  </button>
+                  <button className="primary" onClick={saveNote} disabled={busy}>
+                    <Check size={18} />
+                    Save note
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -682,8 +778,8 @@ export default function App() {
         {view === 'review' && (
           <section className="review-layout">
             <div className="panel">
-              <PanelHeader icon={Sparkles} title="Summary" />
-              <div className="summary-box">{summary || 'Run Summarize on a note to fill this panel.'}</div>
+              <PanelHeader icon={Sparkles} title="Generated AI outputs" />
+              <AiOutputList outputs={generatedOutputs} fallback={summary} />
             </div>
             <div className="panel" data-tour="review">
               <PanelHeader icon={ClipboardList} title="Suggested tasks" />
@@ -883,6 +979,20 @@ function titleForView(view) {
   return titles[view] || 'DAN';
 }
 
+function shortAiActionLabel(action) {
+  const labels = {
+    summarize: 'Summary',
+    bullet_points: 'Bullets',
+    steps: 'Steps',
+    explain_deeper: 'Explain',
+    topics: 'Topics',
+    study_notes: 'Study',
+    extract_actions: 'Tasks',
+    rewrite: 'Clean',
+  };
+  return labels[action.id] || action.label;
+}
+
 function StatusPill({ busy, status }) {
   const hasIssue = issuePattern.test(status || '');
   const hasNetworkIssue = networkIssuePattern.test(status || '');
@@ -979,6 +1089,35 @@ function EmptyState({ title, text, action, onAction }) {
           {action}
         </button>
       )}
+    </div>
+  );
+}
+
+function AiOutputList({ outputs, fallback }) {
+  if (!outputs.length && fallback) {
+    return <div className="summary-box">{fallback}</div>;
+  }
+
+  if (!outputs.length) {
+    return (
+      <EmptyState
+        title="No generated outputs yet"
+        text="Choose AI actions from a note, then run them to create summaries, steps, topics, study notes, or cleaned versions."
+      />
+    );
+  }
+
+  return (
+    <div className="ai-output-list">
+      {outputs.map((item) => (
+        <article className="ai-output" key={item.id}>
+          <div className="ai-output-meta">
+            <strong>{item.title}</strong>
+            <span>{item.type.replaceAll('_', ' ')}</span>
+          </div>
+          <p>{item.content}</p>
+        </article>
+      ))}
     </div>
   );
 }

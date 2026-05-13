@@ -42,7 +42,11 @@ jobs:
 
       - name: Build frontend when present
         run: |
-          if [ -f frontend/package.json ]; then
+          if [ -f frontend/DAN-react/package.json ]; then
+            cd frontend/DAN-react
+            npm ci
+            npm run build
+          elif [ -f frontend/package.json ]; then
             cd frontend
             npm ci
             npm run build

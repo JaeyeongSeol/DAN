@@ -67,6 +67,10 @@ class AiTextRequest(BaseModel):
     note_id: int | None = None
 
 
+class AiActionRunRequest(AiTextRequest):
+    action_id: str = Field(min_length=1)
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=1)
 
@@ -186,6 +190,47 @@ def resolve_ai_text(payload: AiTextRequest) -> tuple[str, int | None]:
             raise HTTPException(status_code=404, detail="Note not found")
         return note["content"], payload.note_id
     return payload.text or "", None
+
+
+def save_ai_action_result(result: dict[str, Any], note_id: int | None) -> dict[str, Any]:
+    if result["suggestion_type"] == "task":
+        suggestions = [
+            database.create_ai_suggestion(
+                suggestion_type="task",
+                title=item["title"],
+                content=item.get("description", ""),
+                note_id=note_id,
+                raw_payload={**item, "action_id": result["action_id"], "mode": result["mode"]},
+                status="draft",
+            )
+            for item in result.get("items", [])
+        ]
+        return {**result, "suggestions": suggestions}
+
+    suggestion = database.create_ai_suggestion(
+        suggestion_type=result["suggestion_type"],
+        title=result["title"],
+        content=result.get("content", ""),
+        note_id=note_id,
+        raw_payload=result.get("raw_payload", result),
+        status="generated",
+    )
+    return {**result, "suggestion": suggestion, "suggestions": [suggestion]}
+
+
+@app.get("/api/ai/actions")
+def list_ai_actions() -> list[dict[str, str]]:
+    return ai_service.list_ai_actions()
+
+
+@app.post("/api/ai/actions/run")
+def run_ai_action(payload: AiActionRunRequest) -> dict[str, Any]:
+    text, note_id = resolve_ai_text(payload)
+    try:
+        result = ai_service.run_ai_action(payload.action_id, text)
+    except KeyError as error:
+        raise HTTPException(status_code=400, detail="Unknown AI action") from error
+    return save_ai_action_result(result, note_id)
 
 
 @app.post("/api/ai/summarize")
