@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 OLLAMA_HOST = os.getenv("DAN_OLLAMA_HOST", "http://127.0.0.1:11434")
-PRIMARY_MODEL = os.getenv("DAN_OLLAMA_MODEL", "gemma4:e2b")
+PRIMARY_MODEL = os.getenv("DAN_OLLAMA_MODEL", "gemma3:4b")
 FALLBACK_MODEL = os.getenv("DAN_OLLAMA_FALLBACK_MODEL", "gemma3:1b")
 
 
@@ -235,4 +235,3 @@ Notes:
         "mode": "mock",
         "answer": f"I found related notes: {note_titles}. The best next step is to open those notes and review the highlighted content.",
     }
-
