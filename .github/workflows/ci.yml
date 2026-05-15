@@ -48,11 +48,11 @@ jobs:
         run: |
           if [ -f frontend/DAN-react/package.json ]; then
             cd frontend/DAN-react
-            npm ci
+            npm install
             npm run build
           elif [ -f frontend/package.json ]; then
             cd frontend
-            npm ci
+            npm install
             npm run build
           else
             echo "No frontend package yet. Skipping frontend build."
