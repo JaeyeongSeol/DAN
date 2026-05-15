@@ -1,0 +1,36 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -r 02_DanShakya_Database/copy_into_repo/week_3/backend/requirements.txt
+      - name: Run tests
+        run: |
+          pytest -q 02_DanShakya_Database/copy_into_repo/week_3/backend/tests
+
+  build-and-push:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: 02_DanShakya_Database/copy_into_repo/week_3/backend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/dan-notes-backend:latest,ghcr.io/${{ github.repository_owner }}/dan-notes-backend:${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
