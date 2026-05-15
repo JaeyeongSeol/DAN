@@ -1,0 +1,56 @@
+name: Demo Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/demo-smoke.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 16 * * 5"
+
+permissions:
+  contents: read
+
+jobs:
+  backend-demo-smoke:
+    name: Backend boots and answers health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Start backend in mock AI mode
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+          DAN_AI_MODE: mock
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+
+      - name: Check /health endpoint
+        working-directory: backend
+        run: |
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Backend did not become ready. Server log:"
+          cat uvicorn.log
+          exit 1

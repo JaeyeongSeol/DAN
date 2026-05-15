@@ -1,0 +1,70 @@
+name: PR Checklist
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-pr-description:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR description and branch name
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || "";
+            const missing = [];
+
+            function getSection(name) {
+              const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const match = body.match(new RegExp(`##\\s*${escaped}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`, "i"));
+              return match ? match[1].trim() : "";
+            }
+
+            function hasRealContent(text) {
+              const cleaned = text
+                .replace(/<!--[\s\S]*?-->/g, "")
+                .split("\n")
+                .map((line) => line.replace(/^[-*]\s*/, "").trim())
+                .filter((line) => line && line !== "-")
+                .join(" ")
+                .trim();
+              return cleaned.length > 5;
+            }
+
+            const summary = getSection("Summary");
+            const changes = getSection("Changes");
+            const testPlan = getSection("How to test");
+            const trello = getSection("Trello")
+              .replace(/^[-*]\s*/gm, "")
+              .replace(/^Card:\s*/i, "")
+              .trim();
+
+            const testTemplateOnly = testPlan
+              .replace(/- \[ \] Backend: `cd backend && pip install -r requirements\.txt -r requirements-dev\.txt && pytest`/i, "")
+              .replace(/- \[ \] Frontend: add steps \(if applicable\)/i, "")
+              .trim();
+
+            if (!hasRealContent(summary)) missing.push("a real Summary section");
+            if (!hasRealContent(changes)) missing.push("a real Changes section");
+            if (!/\[[xX]\]/.test(testPlan) && !hasRealContent(testTemplateOnly)) {
+              missing.push("checked or written test steps under How to test");
+            }
+            if (trello.length < 5) missing.push("a Trello card link or ID");
+
+            const allowedBranch = /^(feature|fix|docs|chore|test|ci)\//.test(pr.head.ref);
+            if (!allowedBranch) {
+              missing.push("a branch name starting with feature/, fix/, docs/, chore/, test/, or ci/");
+            }
+
+            if (missing.length > 0) {
+              core.setFailed(`Please update this PR with ${missing.join(", ")}.`);
+            } else {
+              core.notice("PR description and branch name match the DAN team workflow.");
+            }
