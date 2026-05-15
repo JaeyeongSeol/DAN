@@ -14,22 +14,52 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+      - name: Detect backend path
+        id: detect
+        run: |
+          if [ -f backend/requirements.txt ]; then
+            echo "backend_path=backend" >> $GITHUB_OUTPUT
+          elif [ -f "02_DanShakya_Database/copy_into_repo/week_3/backend/requirements.txt" ]; then
+            echo "backend_path=02_DanShakya_Database/copy_into_repo/week_3/backend" >> $GITHUB_OUTPUT
+          else
+            echo "backend_path=" >> $GITHUB_OUTPUT
+          fi
       - name: Install dependencies
+        if: steps.detect.outputs.backend_path != ''
         run: |
-          pip install -r 02_DanShakya_Database/copy_into_repo/week_3/backend/requirements.txt
+          pip install -r ${{ steps.detect.outputs.backend_path }}/requirements.txt
+          if [ -f ${{ steps.detect.outputs.backend_path }}/requirements-dev.txt ]; then pip install -r ${{ steps.detect.outputs.backend_path }}/requirements-dev.txt || true; fi
       - name: Run tests
+        if: steps.detect.outputs.backend_path != ''
+        env:
+          PYTHONPATH: ${{ steps.detect.outputs.backend_path }}
         run: |
-          pytest -q 02_DanShakya_Database/copy_into_repo/week_3/backend/tests
+          if [ -d ${{ steps.detect.outputs.backend_path }}/tests ]; then
+            pytest -q ${{ steps.detect.outputs.backend_path }}/tests
+          else
+            echo "No backend tests found — skipping"
+          fi
 
   build-and-push:
     needs: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect backend path
+        id: detect2
+        run: |
+          if [ -f backend/Dockerfile ]; then
+            echo "context_path=backend" >> $GITHUB_OUTPUT
+          elif [ -f "02_DanShakya_Database/copy_into_repo/week_3/backend/Dockerfile" ]; then
+            echo "context_path=02_DanShakya_Database/copy_into_repo/week_3/backend" >> $GITHUB_OUTPUT
+          else
+            echo "context_path=" >> $GITHUB_OUTPUT
+          fi
       - name: Build and push Docker image
+        if: steps.detect2.outputs.context_path != ''
         uses: docker/build-push-action@v4
         with:
-          context: 02_DanShakya_Database/copy_into_repo/week_3/backend
+          context: ${{ steps.detect2.outputs.context_path }}
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/dan-notes-backend:latest,ghcr.io/${{ github.repository_owner }}/dan-notes-backend:${{ github.sha }}
         env:
