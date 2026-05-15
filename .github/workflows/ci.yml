@@ -43,17 +43,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/DAN-react/package-lock.json
 
-      - name: Build frontend when present
-        run: |
-          if [ -f frontend/DAN-react/package.json ]; then
-            cd frontend/DAN-react
-            npm ci
-            npm run build
-          elif [ -f frontend/package.json ]; then
-            cd frontend
-            npm ci
-            npm run build
-          else
-            echo "No frontend package yet. Skipping frontend build."
-          fi
+      - name: Install frontend dependencies
+        working-directory: frontend/DAN-react
+        run: npm install --include=optional
+
+      - name: Build frontend
+        working-directory: frontend/DAN-react
+        run: npm run build

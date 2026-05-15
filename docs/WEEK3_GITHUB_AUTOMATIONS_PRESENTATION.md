@@ -14,7 +14,7 @@ The repo now has three GitHub Actions workflows that show both code quality and 
 2. Click the `Actions` tab.
 3. Show the `CI` workflow and explain the two jobs:
    - `backend-tests` installs Python dependencies and runs Pytest.
-   - `frontend-build` installs the React/Vite app and runs `npm run build`.
+   - `frontend-build` installs the React/Vite app with Node 24 and runs `npm run build`.
 4. Show the `PR Checklist` workflow:
    - It makes sure the PR has summary, changes, test steps, Trello info, and a proper branch name.
 5. Show the `Demo Smoke Test` workflow:
